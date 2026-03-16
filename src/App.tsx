@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, auth, signIn, logOut } from './firebase';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Package, Calculator, History, Image as ImageIcon, Trash2, Plus, LogIn, LogOut, Save, X, Download } from 'lucide-react';
+import { Package, Calculator, History, Image as ImageIcon, Trash2, Plus, LogIn, LogOut, Save, X, Download, ClipboardPaste } from 'lucide-react';
 
 type Mode = 'express' | 'freight';
 
@@ -36,8 +36,17 @@ export default function App() {
   const [rows, setRows] = useState<RowData[]>([{ id: Date.now().toString(), l: '', w: '', h: '', qty: '1', weight: '' }]);
   const [trackingNo, setTrackingNo] = useState('');
   
+  const [unitPrice, setUnitPrice] = useState<string>('');
+  const [insuranceFee, setInsuranceFee] = useState<string>('');
+  const [overLengthFee, setOverLengthFee] = useState<string>('');
+  const [overWeightFee, setOverWeightFee] = useState<string>('');
+  const [remoteFee, setRemoteFee] = useState<string>('');
+  
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<MeasurementRecord[]>([]);
+  
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkText, setBulkText] = useState('');
   
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageRow, setImageRow] = useState<RowData | null>(null);
@@ -86,6 +95,59 @@ export default function App() {
     setRows([{ id: Date.now().toString(), l: '', w: '', h: '', qty: '1', weight: '' }]);
   };
 
+  const handleBulkImport = () => {
+    if (!bulkText.trim()) return;
+    
+    const lines = bulkText.split('\n');
+    const newRows: RowData[] = [];
+    
+    lines.forEach(line => {
+      if (!line.trim()) return;
+      
+      const nums = line.match(/\d+(\.\d+)?/g);
+      if (nums && nums.length >= 3) {
+        let l = nums[0];
+        let w = nums[1];
+        let h = nums[2];
+        let qty = '1';
+        let weight = '';
+        
+        const weightMatch = line.match(/(\d+(?:\.\d+)?)\s*(kg|千克|公斤|重)/i);
+        const qtyMatch = line.match(/(\d+)\s*(件|箱|ctn|pcs)/i);
+        
+        if (weightMatch) weight = weightMatch[1];
+        if (qtyMatch) qty = qtyMatch[1];
+        
+        if (!weightMatch && !qtyMatch) {
+            if (nums.length === 4) {
+                if (nums[3].includes('.')) weight = nums[3];
+                else qty = nums[3];
+            } else if (nums.length >= 5) {
+                qty = nums[3];
+                weight = nums[4];
+            }
+        }
+        
+        newRows.push({
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          l, w, h, qty, weight
+        });
+      }
+    });
+    
+    if (newRows.length > 0) {
+      if (rows.length === 1 && !rows[0].l && !rows[0].w && !rows[0].h && !rows[0].weight) {
+        setRows(newRows);
+      } else {
+        setRows([...rows, ...newRows]);
+      }
+      setShowBulkModal(false);
+      setBulkText('');
+    } else {
+      alert('未能识别到有效的尺寸数据，请检查格式。(No valid dimensions found)');
+    }
+  };
+
   const calculateTotals = () => {
     let totalVolWeight = 0;
     let totalActualWeight = 0;
@@ -116,7 +178,14 @@ export default function App() {
     }
 
     const chargeableWeight = Math.max(totalActualWeight, totalVolWeight);
-    return { totalCtns, totalActualWeight, totalVolWeight, totalCBM, chargeableWeight };
+    
+    const finalCost = (chargeableWeight * (parseFloat(unitPrice) || 0)) +
+                      (parseFloat(insuranceFee) || 0) +
+                      (parseFloat(overLengthFee) || 0) +
+                      (parseFloat(overWeightFee) || 0) +
+                      (parseFloat(remoteFee) || 0);
+
+    return { totalCtns, totalActualWeight, totalVolWeight, totalCBM, chargeableWeight, finalCost };
   };
 
   const totals = calculateTotals();
@@ -356,29 +425,14 @@ export default function App() {
           <div className="flex items-center gap-3">
             <Package className="w-8 h-8 text-blue-600" />
             <h1 className="text-2xl font-bold text-blue-800 flex items-center gap-2">
-              西雄国际物流智能计算器
+              集运巴巴物流智能计费系统
               <span className="bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-normal">Pro</span>
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {user ? (
-              <>
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <img src={user.photoURL || ''} alt="avatar" className="w-8 h-8 rounded-full" />
-                  <span className="hidden md:inline">{user.displayName}</span>
-                </div>
-                <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors">
-                  <History className="w-4 h-4" /> 历史记录
-                </button>
-                <button onClick={logOut} className="flex items-center gap-1 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition-colors">
-                  <LogOut className="w-4 h-4" /> 退出
-                </button>
-              </>
-            ) : (
-              <button onClick={signIn} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
-                <LogIn className="w-4 h-4" /> 登录保存记录
-              </button>
-            )}
+            <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors">
+              <History className="w-4 h-4" /> 历史记录
+            </button>
           </div>
         </header>
 
@@ -476,7 +530,7 @@ export default function App() {
                       <td className="py-2 pr-2"><input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-mono" placeholder="1" value={row.qty} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} /></td>
                       <td className="py-2 pr-2"><input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-mono" placeholder="0" value={row.weight} onChange={(e) => updateRow(row.id, 'weight', e.target.value)} /></td>
                       <td className="py-2 flex items-center justify-center gap-2">
-                        <button onClick={() => openImageModal(row)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="生成体积图">
+                        <button onClick={() => openImageModal(row)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="过机体积重量图">
                           <ImageIcon className="w-5 h-5" />
                         </button>
                         <button onClick={() => removeRow(row.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="删除">
@@ -494,18 +548,45 @@ export default function App() {
                 <button onClick={addRow} className="flex items-center gap-1 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-md font-medium transition-colors">
                   <Plus className="w-4 h-4" /> 增加规格
                 </button>
+                <button onClick={() => setShowBulkModal(true)} className="flex items-center gap-1 px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-md font-medium transition-colors">
+                  <ClipboardPaste className="w-4 h-4" /> 批量导入
+                </button>
                 <button onClick={clearRows} className="flex items-center gap-1 px-4 py-2 bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 rounded-md font-medium transition-colors">
                   清空
                 </button>
               </div>
-              {user && (
-                <button onClick={saveRecord} className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium shadow-sm transition-colors">
-                  <Save className="w-4 h-4" /> 保存记录到云端
-                </button>
-              )}
             </div>
 
-            <div className="bg-slate-800 text-white rounded-xl p-6 grid grid-cols-2 md:grid-cols-4 gap-6">
+            {/* Billing Settings */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+              <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-blue-600" /> 计费设置 (选填)
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">单价 (元/计费重)</label>
+                  <input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="0.00" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">附加费: 保险费</label>
+                  <input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="0.00" value={insuranceFee} onChange={(e) => setInsuranceFee(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">附加费: 超长费</label>
+                  <input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="0.00" value={overLengthFee} onChange={(e) => setOverLengthFee(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">附加费: 超重费</label>
+                  <input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="0.00" value={overWeightFee} onChange={(e) => setOverWeightFee(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">附加费: 偏远费</label>
+                  <input type="number" className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="0.00" value={remoteFee} onChange={(e) => setRemoteFee(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-800 text-white rounded-xl p-6 grid grid-cols-2 md:grid-cols-5 gap-6">
               {mode === 'express' ? (
                 <>
                   <div>
@@ -546,6 +627,10 @@ export default function App() {
                   </div>
                 </>
               )}
+              <div className="border-l border-slate-600 pl-6 col-span-2 md:col-span-1">
+                <h4 className="text-xs text-emerald-400 mb-1">最终运费 (预估)</h4>
+                <div className="text-2xl font-bold text-emerald-400">¥{totals.finalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -598,6 +683,27 @@ export default function App() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Bottom Action Bar for Login / Save */}
+        <div className="lg:col-span-12 mt-4">
+          {!user ? (
+            <button onClick={signIn} className="w-full py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2 text-lg font-medium transition-colors shadow-md">
+              <LogIn className="w-5 h-5" /> 登录账号，开启云端同步保存功能
+            </button>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <button onClick={saveRecord} className="w-full py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center justify-center gap-2 text-lg font-medium transition-colors shadow-md">
+                <Save className="w-5 h-5" /> 保存当前计算记录到云端
+              </button>
+              <div className="flex justify-between items-center text-sm text-slate-500 px-2">
+                <span>当前登录账号: {user.email}</span>
+                <button onClick={logOut} className="hover:text-slate-800 flex items-center gap-1 transition-colors">
+                  <LogOut className="w-4 h-4" /> 退出登录
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -655,12 +761,51 @@ export default function App() {
         </div>
       )}
 
+      {/* Bulk Import Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><ClipboardPaste className="w-5 h-5 text-indigo-600" /> 批量导入尺寸</h2>
+              <button onClick={() => setShowBulkModal(false)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex-1">
+              <div className="mb-3 text-sm text-slate-600 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                <p className="font-semibold mb-1">支持智能识别多种格式，每行一条数据：</p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-500">
+                  <li>纯数字：<code className="bg-white px-1 rounded">50*40*30</code> 或 <code className="bg-white px-1 rounded">50 40 30</code></li>
+                  <li>带箱数：<code className="bg-white px-1 rounded">50*40*30 2箱</code> 或 <code className="bg-white px-1 rounded">50*40*30*2</code></li>
+                  <li>带重量：<code className="bg-white px-1 rounded">50*40*30 15kg</code></li>
+                  <li>完整版：<code className="bg-white px-1 rounded">50*40*30 2件 15.5kg</code></li>
+                </ul>
+              </div>
+              <textarea
+                className="w-full h-64 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-mono text-sm"
+                placeholder="在此粘贴您的数据...&#10;50*40*30&#10;60x50x40 2件 15kg&#10;45 45 45 3 12.5"
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+              ></textarea>
+            </div>
+            <div className="p-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
+              <button onClick={() => setShowBulkModal(false)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors font-medium">
+                取消
+              </button>
+              <button onClick={handleBulkImport} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm">
+                解析并导入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Image Generation Modal */}
       {showImageModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><ImageIcon className="w-5 h-5 text-blue-600" /> 生成体积重量图</h2>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><ImageIcon className="w-5 h-5 text-blue-600" /> 过机体积重量图</h2>
               <button onClick={() => setShowImageModal(false)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>
