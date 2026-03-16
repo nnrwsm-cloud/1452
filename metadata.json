@@ -1,0 +1,5 @@
+{
+  "name": "Smart Logistics Calculator",
+  "description": "A logistics calculator for express and freight shipments, with database record saving and volumetric weight image generation.",
+  "requestFramePermissions": []
+}

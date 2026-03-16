@@ -1,0 +1,66 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users/{userId}/measurements
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required) - The ID of the user who created the record.
+    //   - length: number (required) - Length of the package in cm.
+    //   - width: number (required) - Width of the package in cm.
+    //   - height: number (required) - Height of the package in cm.
+    //   - actualWeight: number (required) - Actual weight of the package in kg.
+    //   - volumetricWeight: number (optional) - Calculated volumetric weight in kg.
+    //   - chargeableWeight: number (optional) - Final chargeable weight in kg.
+    //   - mode: string (optional) - Calculation mode used ('express' or 'freight').
+    //   - createdAt: timestamp (required) - Timestamp when the record was created.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function isValidMeasurement(userId) {
+      let data = request.resource.data;
+      return hasRequiredFields(['userId', 'length', 'width', 'height', 'actualWeight', 'createdAt']) &&
+             data.userId == userId &&
+             data.length is number && data.length >= 0 &&
+             data.width is number && data.width >= 0 &&
+             data.height is number && data.height >= 0 &&
+             data.actualWeight is number && data.actualWeight >= 0 &&
+             data.createdAt is timestamp &&
+             (!('volumetricWeight' in data) || (data.volumetricWeight is number && data.volumetricWeight >= 0)) &&
+             (!('chargeableWeight' in data) || (data.chargeableWeight is number && data.chargeableWeight >= 0)) &&
+             (!('mode' in data) || (data.mode in ['express', 'freight']));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId}/measurements/{measurementId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidMeasurement(userId);
+      allow update: if isOwner(userId) && isValidMeasurement(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+  }
+}

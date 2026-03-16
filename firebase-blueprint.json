@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "MeasurementRecord": {
+      "title": "Measurement Record",
+      "description": "A record of a logistics measurement calculation.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who created the record."
+        },
+        "length": {
+          "type": "number",
+          "description": "Length of the package in cm."
+        },
+        "width": {
+          "type": "number",
+          "description": "Width of the package in cm."
+        },
+        "height": {
+          "type": "number",
+          "description": "Height of the package in cm."
+        },
+        "actualWeight": {
+          "type": "number",
+          "description": "Actual weight of the package in kg."
+        },
+        "volumetricWeight": {
+          "type": "number",
+          "description": "Calculated volumetric weight in kg."
+        },
+        "chargeableWeight": {
+          "type": "number",
+          "description": "Final chargeable weight in kg."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["express", "freight"],
+          "description": "Calculation mode used."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the record was created."
+        }
+      },
+      "required": ["userId", "length", "width", "height", "actualWeight", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}/measurements/{measurementId}": {
+      "schema": {
+        "$ref": "#/entities/MeasurementRecord"
+      },
+      "description": "Measurement records belonging to a specific user."
+    }
+  }
+}
