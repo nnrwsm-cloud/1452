@@ -56,10 +56,10 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    match /users/{userId}/measurements/{measurementId} {
+    match /users/{userId}/{collectionName}/{docId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidMeasurement(userId);
-      allow update: if isOwner(userId) && isValidMeasurement(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow create: if isOwner(userId) && request.resource.data.createdAt is timestamp;
+      allow update: if isOwner(userId) && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isOwner(userId);
     }
   }
